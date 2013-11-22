@@ -12,4 +12,10 @@
           android:orderInCategory="100"
           android:showAsAction="never" />
 
+    <item android:id="@+id/action_recalibrate"
+          android:title="@string/recalibrate"
+          android:enabled="false"
+          android:orderInCategory="100"
+          android:showAsAction="never" />
+
 </menu>

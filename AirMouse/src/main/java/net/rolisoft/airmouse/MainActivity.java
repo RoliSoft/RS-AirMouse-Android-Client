@@ -77,6 +77,11 @@ public class MainActivity extends Activity implements SensorEventListener {
                 return true;
             }
 
+            case R.id.action_recalibrate: {
+                sendRecalibrate();
+                return true;
+            }
+
             default: {
                 return super.onOptionsItemSelected(item);
             }
@@ -360,6 +365,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                     registerSensor();
                     Toast.makeText(MainActivity.this, "Successfully connected!", Toast.LENGTH_SHORT).show();
                     _menu.findItem(R.id.action_connect).setTitle("Disconnect");
+                    _menu.findItem(R.id.action_recalibrate).setEnabled(true);
                 } else {
                     AlertDialog.Builder dlg  = new AlertDialog.Builder(MainActivity.this);
                     dlg.setTitle("Connection Error");
@@ -404,6 +410,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     private void disconnect(boolean voluntary) {
         _menu.findItem(R.id.action_connect).setTitle("Connect");
+        _menu.findItem(R.id.action_recalibrate).setEnabled(false);
 
         unregisterSensor();
 
@@ -423,12 +430,19 @@ public class MainActivity extends Activity implements SensorEventListener {
 
     private void registerSensor() {
         if (_socket != null && _socket.isConnected() && _writer != null) {
-            _sensorMgr.registerListener(this, _sensorMgr.getDefaultSensor(_selSensor == 0 ? Sensor.TYPE_LINEAR_ACCELERATION : Sensor.TYPE_ROTATION_VECTOR), SensorManager.SENSOR_DELAY_NORMAL);
+            _sensorMgr.registerListener(this, _sensorMgr.getDefaultSensor(_selSensor == 0 ? Sensor.TYPE_ACCELEROMETER : Sensor.TYPE_ROTATION_VECTOR), SensorManager.SENSOR_DELAY_NORMAL);
         }
     }
 
     private void unregisterSensor() {
         _sensorMgr.unregisterListener(this);
+    }
+
+    private void sendRecalibrate() {
+        if (_socket != null && _socket.isConnected() && _writer != null) {
+            _writer.println("reset");
+            _writer.flush();
+        }
     }
 
     /**

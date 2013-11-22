@@ -8,6 +8,7 @@
     <string name="disconnect">Disconnect</string>
     <string name="cancel">Cancel</string>
     <string name="sensor">Sensor</string>
+    <string name="recalibrate">Recalibrate</string>
     <string name="accelerometer">Accelerometer</string>
     <string name="gyroscope">Gyroscope</string>
     <string name="select_sensor">Select Sensor</string>
