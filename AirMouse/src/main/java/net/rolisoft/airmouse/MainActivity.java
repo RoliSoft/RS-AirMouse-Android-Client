@@ -34,14 +34,21 @@ import java.net.Socket;
 import java.util.ArrayList;
 import java.util.StringTokenizer;
 
+/**
+ * Main activity of the AirMouse application.
+ */
 public class MainActivity extends Activity implements SensorEventListener {
 
     private Menu _menu;
     private int _selSensor;
-    private Socket _socket;
-    private PrintWriter _writer;
+    private Connection _con;
     private SensorManager _sensorMgr;
 
+    /**
+     * Called when the activity is starting.
+     *
+     * @param savedInstanceState Contains previously supplied data.
+     */
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
@@ -56,7 +63,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         _sensorMgr = (SensorManager)getSystemService(SENSOR_SERVICE);
     }
 
-
+    /**
+     * Creates the menu for the activity.
+     *
+     * @param menu Active menu instance.
+     *
+     * @return True if the initialization was successful.
+     */
     @Override
     public boolean onCreateOptionsMenu(Menu menu) {
         _menu = menu;
@@ -64,6 +77,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         return true;
     }
 
+    /**
+     * This hook is called when a menu item is tapped.
+     *
+     * @param item The selected menu item.
+     *
+     * @return Value indicating whether it was handled.
+     */
     @Override
     public boolean onOptionsItemSelected(MenuItem item) {
         switch (item.getItemId()) {
@@ -88,8 +108,12 @@ public class MainActivity extends Activity implements SensorEventListener {
         }
     }
 
+    /**
+     * Prepares for showing the connect dialog.
+     * If there is internet connection, starts the server discovery; otherwise, fails.
+     */
     private void showConnectDialog() {
-        if (_socket != null && _socket.isConnected()) {
+        if (_con != null && _con.isConnected()) {
             disconnect(true);
             return;
         }
@@ -105,6 +129,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         showDiscoveryConnectDialog();
     }
 
+    /**
+     * Shows a progress dialog while server discovery is running.
+     * If the server discovery was successful, a list will be displayed to the user.
+     * If the server discovery was not successful, the user will be taken to the manual connect dialog.
+     */
     private void showDiscoveryConnectDialog() {
         AsyncTask<Void, Void, Tuple<Exception, ArrayList<Tuple<String, Integer>>>> task = new AsyncTask<Void, Void, Tuple<Exception, ArrayList<Tuple<String, Integer>>>>() {
 
@@ -121,58 +150,7 @@ public class MainActivity extends Activity implements SensorEventListener {
 
             @Override
             protected Tuple<Exception, ArrayList<Tuple<String, Integer>>> doInBackground(Void... arg0) {
-                ArrayList<Tuple<String, Integer>> discovered = new ArrayList<>();
-
-                DatagramSocket socket = null;
-
-                try {
-                    WifiManager wifi = (WifiManager)getSystemService(Context.WIFI_SERVICE);
-                    DhcpInfo dhcp = wifi.getDhcpInfo();
-
-                    int broadcast = (dhcp.ipAddress & dhcp.netmask) | ~dhcp.netmask;
-                    byte[] quads = new byte[4];
-                    for (int k = 0; k < 4; k++) {
-                        quads[k] = (byte) ((broadcast >> k * 8) & 0xFF);
-                    }
-
-                    InetAddress bcast = InetAddress.getByAddress(quads);
-                    byte[] data = "RS-AirMouse discover".getBytes();
-
-                    socket = new DatagramSocket(8773);
-                    socket.setBroadcast(true);
-                    socket.setSoTimeout(100);
-                    DatagramPacket packet = new DatagramPacket(data, data.length, bcast, 8337);
-                    socket.send(packet);
-
-                    long time = System.currentTimeMillis() + 1000;
-                    while (time > System.currentTimeMillis()) {
-                        try {
-                            byte[] recv = new byte[15000];
-                            DatagramPacket racket = new DatagramPacket(recv, recv.length);
-                            socket.receive(racket);
-                            String pckt = new String(recv).trim();
-                            StringTokenizer st = new StringTokenizer(pckt);
-
-                            if (!st.hasMoreTokens() || !st.nextToken().contentEquals("RS-AirMouse")) {
-                                continue;
-                            }
-
-                            Tuple<String, Integer> host = new Tuple(st.nextToken(), Integer.parseInt(st.nextToken()));
-                            discovered.add(host);
-                        } catch (Exception e) {
-                            e.printStackTrace();
-                        }
-                    }
-                } catch (Exception e) {
-                    e.printStackTrace();
-                    return new Tuple(e, discovered);
-                } finally {
-                    if (socket != null && socket.isBound()) {
-                        socket.close();
-                    }
-                }
-
-                return new Tuple(null, discovered);
+                return Connection.discoverServers(MainActivity.this);
             }
 
             @Override
@@ -209,6 +187,13 @@ public class MainActivity extends Activity implements SensorEventListener {
         task.execute((Void[])null);
     }
 
+    /**
+     * Shows the list of discovered servers to the user for choice, additionally with the option to
+     * input a manual address to connect to.
+     *
+     * @param servers The list of discovered server.
+     *                The array items are IP/port pairs.
+     */
     private void showSelectConnectDialog(final ArrayList<Tuple<String, Integer>> servers) {
         AlertDialog dialog;
         AlertDialog.Builder dlgbuild = new AlertDialog.Builder(this);
@@ -229,7 +214,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                         if (which == servers.size()) {
                             showManualConnectDialog();
                         } else {
-                            showConnectDialog(servers.get(which).x, servers.get(which).y);
+                            showConnectProgressDialog(servers.get(which).x, servers.get(which).y);
                         }
 
                         dialog.dismiss();
@@ -241,6 +226,11 @@ public class MainActivity extends Activity implements SensorEventListener {
         dialog.show();
     }
 
+    /**
+     * Shows a dialog which allows for manual entry of the IP address or hostname and port of the
+     * server the user wishes to connect to. This is mostly being shown when the server discovery failed
+     * or the user intentionally chose to enter a manual server location.
+     */
     private void showManualConnectDialog() {
         AlertDialog dialog;
         AlertDialog.Builder dlgbuild = new AlertDialog.Builder(this);
@@ -286,12 +276,16 @@ public class MainActivity extends Activity implements SensorEventListener {
                 }
 
                 dtmp.dismiss();
-                showConnectDialog(addr.getText().toString().trim(), Integer.parseInt(port.getText().toString().trim()));
+                showConnectProgressDialog(addr.getText().toString().trim(), Integer.parseInt(port.getText().toString().trim()));
             }
 
         });
     }
 
+    /**
+     * Shows a dialog which lets the user choose from the list of supported sensors.
+     * If the user changes the sensor, the change is propagated through the connection.
+     */
     private void showSensorDialog() {
         AlertDialog dialog;
         AlertDialog.Builder dlgbuild = new AlertDialog.Builder(this);
@@ -305,11 +299,7 @@ public class MainActivity extends Activity implements SensorEventListener {
                             unregisterSensor();
 
                             _selSensor = which;
-
-                            if (_socket != null && _socket.isConnected() && _writer != null && !_writer.checkError()) {
-                                _writer.println("type " + (which + 1));
-                                _writer.flush();
-                            }
+                            _con.send("type " + (which + 1));
 
                             registerSensor();
 
@@ -325,11 +315,20 @@ public class MainActivity extends Activity implements SensorEventListener {
         dialog.show();
     }
 
-    private void showConnectDialog(final String host, final int port) {
+    /**
+     * Initiates a new connection to the specified server and shows a dialog while doing it.
+     *
+     * @param host The IP address or hostname of the remote server.
+     * @param port The port number of the remote server.
+     */
+    private void showConnectProgressDialog(final String host, final int port) {
         AsyncTask<Void, Void, Tuple<Boolean, Exception>> task = new AsyncTask<Void, Void, Tuple<Boolean, Exception>>() {
 
             private ProgressDialog _pd;
 
+            /**
+             * Sets up the progress dialog.
+             */
             @Override
             protected void onPreExecute() {
                 _pd = new ProgressDialog(MainActivity.this);
@@ -339,14 +338,19 @@ public class MainActivity extends Activity implements SensorEventListener {
                 _pd.show();
             }
 
+            /**
+             * Initiates a new connection.
+             *
+             * @param arg0 Unused arguments.
+             *
+             * @return A pair of values indicating whether the connection failed,
+             *         and if so, the causing Exception is attached.
+             */
             @Override
             protected Tuple<Boolean, Exception> doInBackground(Void... arg0) {
                 try {
-                    _socket = new Socket(host, port);
-                    _writer = new PrintWriter(_socket.getOutputStream());
-
-                    _writer.println("RS-AirMouse " + (Build.MANUFACTURER + " " + android.os.Build.MODEL).replace(' ', '_') + " " + (_selSensor + 1));
-                    _writer.flush();
+                    _con = new Connection(host, port);
+                    _con.send("RS-AirMouse " + (Build.MANUFACTURER + " " + android.os.Build.MODEL).replace(' ', '_') + " " + (_selSensor + 1));
 
                     return new Tuple(true, null);
                 } catch (IOException e) {
@@ -355,6 +359,12 @@ public class MainActivity extends Activity implements SensorEventListener {
                 }
             }
 
+            /**
+             * Informs the user of the successfulness of the connection.
+             *
+             * @param result A pair of values indicating whether the connection failed,
+             *               and if so, the causing Exception is attached.
+             */
             @Override
             protected void onPostExecute(Tuple<Boolean, Exception> result) {
                 if (_pd != null) {
@@ -381,67 +391,94 @@ public class MainActivity extends Activity implements SensorEventListener {
         task.execute((Void[]) null);
     }
 
+    /**
+     * When the activity is resumed, re-registers for sensor readings.
+     */
     @Override
     protected void onResume() {
         super.onResume();
         registerSensor();
     }
 
+    /**
+     * When the activity is paused, de-register from sensor readings.
+     */
     @Override
     protected void onPause() {
         super.onPause();
         unregisterSensor();
     }
 
+    /**
+     * Occurs when a new measurement is available from the selected sensor.
+     * This measurement will be forwarded through the active connection.
+     *
+     * @param event Sensor measurement data.
+     */
     @Override
     public void onSensorChanged(SensorEvent event) {
-        if (_socket != null && _socket.isConnected() && _writer != null && !_writer.checkError()) {
-            _writer.println("data " + event.values[0] + "," + event.values[1] + "," + event.values[2]);
-            _writer.flush();
+        if (_con != null && _con.canSend()) {
+            _con.send("data " + event.values[0] + "," + event.values[1] + "," + event.values[2]);
         } else {
             disconnect(false);
         }
     }
 
+    /**
+     * Occurs when the accuracy of the selected sensor has changed.
+     * This function is not implemented, due to the lack of accuracy changes in the supported sensors.
+     *
+     * @param sensor The sensor instance on which the change happened.
+     * @param accuracy The new accuracy on the sensor.
+     */
     @Override
     public void onAccuracyChanged(Sensor sensor, int accuracy) {
 
     }
 
+    /**
+     * Disconnects an existing connection.
+     *
+     * @param voluntary Value indicating whether the disconnect was initiated by the user,
+     *                  or happening due to connection loss.
+     */
     private void disconnect(boolean voluntary) {
         _menu.findItem(R.id.action_connect).setTitle("Connect");
         _menu.findItem(R.id.action_recalibrate).setEnabled(false);
 
         unregisterSensor();
 
-        if (_socket != null) {
-            try {
-                _socket.close();
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
+        if (_con != null) {
+            _con.disconnect();
         }
-
-        _socket = null;
-        _writer = null;
 
         Toast.makeText(MainActivity.this, voluntary ? "Successfully disconnected." : "Connection lost.", Toast.LENGTH_LONG).show();
     }
 
+    /**
+     * Given that a connection is alive, registers for sensor measurement data.
+     */
     private void registerSensor() {
-        if (_socket != null && _socket.isConnected() && _writer != null) {
+        if (_con != null && _con.canSend()) {
             _sensorMgr.registerListener(this, _sensorMgr.getDefaultSensor(_selSensor == 0 ? Sensor.TYPE_ACCELEROMETER : Sensor.TYPE_ROTATION_VECTOR), SensorManager.SENSOR_DELAY_NORMAL);
         }
     }
 
+    /**
+     * Un-registers from the sensor measurement data.
+     * This does not mean the connection was lost, it can also happen when the activity is being suspended
+     * or the sensor is simply being switched.
+     */
     private void unregisterSensor() {
         _sensorMgr.unregisterListener(this);
     }
 
+    /**
+     * Sends recalibration packet to the server.
+     */
     private void sendRecalibrate() {
-        if (_socket != null && _socket.isConnected() && _writer != null) {
-            _writer.println("reset");
-            _writer.flush();
+        if (_con != null && _con.canSend()) {
+            _con.send("reset");
         }
     }
 
@@ -450,6 +487,9 @@ public class MainActivity extends Activity implements SensorEventListener {
      */
     public static class PlaceholderFragment extends Fragment {
 
+        /**
+         * Initializes this instance.
+         */
         public PlaceholderFragment() {
 
         }
