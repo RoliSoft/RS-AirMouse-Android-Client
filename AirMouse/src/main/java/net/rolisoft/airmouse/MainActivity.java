@@ -10,11 +10,7 @@ import android.net.ConnectivityManager;
 import android.net.NetworkInfo;
 import android.os.AsyncTask;
 import android.os.Bundle;
-import android.view.LayoutInflater;
-import android.view.Menu;
-import android.view.MenuItem;
-import android.view.View;
-import android.view.ViewGroup;
+import android.view.*;
 import android.os.Build;
 import android.widget.Button;
 import android.widget.EditText;
@@ -29,6 +25,7 @@ import java.util.ArrayList;
 public class MainActivity extends Activity {
 
     private Menu _menu;
+    private Button _clickButton;
     private Connection _connection;
     private SensorHandler _sensor;
 
@@ -384,9 +381,13 @@ public class MainActivity extends Activity {
 
                 if (result.x) {
                     _sensor.registerSensor();
+
                     Toast.makeText(MainActivity.this, "Successfully connected!", Toast.LENGTH_SHORT).show();
+
                     _menu.findItem(R.id.action_connect).setTitle("Disconnect");
                     _menu.findItem(R.id.action_recalibrate).setEnabled(true);
+
+                    _clickButton.setVisibility(View.VISIBLE);
                 } else {
                     AlertDialog.Builder dlg  = new AlertDialog.Builder(MainActivity.this);
                     dlg.setTitle("Connection Error");
@@ -427,6 +428,8 @@ public class MainActivity extends Activity {
      *                  or happening due to connection loss.
      */
     public void disconnect(boolean voluntary) {
+        _clickButton.setVisibility(View.INVISIBLE);
+
         _menu.findItem(R.id.action_connect).setTitle("Connect");
         _menu.findItem(R.id.action_recalibrate).setEnabled(false);
 
@@ -451,7 +454,7 @@ public class MainActivity extends Activity {
     /**
      * A placeholder fragment containing a simple view.
      */
-    public static class PlaceholderFragment extends Fragment {
+    public class PlaceholderFragment extends Fragment {
 
         /**
          * Initializes this instance.
@@ -463,6 +466,25 @@ public class MainActivity extends Activity {
         @Override
         public View onCreateView(LayoutInflater inflater, ViewGroup container, Bundle savedInstanceState) {
             View rootView = inflater.inflate(R.layout.fragment_main, container, false);
+
+            MainActivity.this._clickButton = (Button)rootView.findViewById(R.id.click_button);
+            MainActivity.this._clickButton.setOnTouchListener(new View.OnTouchListener() {
+                @Override
+                public boolean onTouch(View view, MotionEvent motionEvent) {
+                    int evt = motionEvent.getAction();
+
+                    if (evt != MotionEvent.ACTION_DOWN && evt != MotionEvent.ACTION_UP) {
+                        return false;
+                    }
+
+                    if (MainActivity.this._connection != null && MainActivity.this._connection.canSend()) {
+                        MainActivity.this._connection.send("tap " + (evt == MotionEvent.ACTION_DOWN ? "on" : "off"));
+                    }
+
+                    return true;
+                }
+            });
+
             return rootView;
         }
     }
